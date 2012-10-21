@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# Script usage/help/error strings
+S_SCRIPTNAME="mountrepo"
+S_USAGE="Usage: mountrepo [OPTIONS]\nTry 'mountrepo help' for more information."
+S_USAGE_EXTENDED="Usage: mountrepo [OPTIONS]\nOPTIONS is a url identifying a valid svn repo."
+S_HELP=$S_SCRIPTNAME" \"mounts\" a remote Subversion repository,\nallowing you to peruse it as you would a local file system."
+S_SVN_NOT_INSTALLED="mountrepo: requires Subversion VCS."
+S_MOUNT_ERROR="mountrepo: unable to \"mount\" repo. Subversion reports:"
+
+# Error codes
+E_SUCCESS=0
+E_ERROR=-1
+
+# SVN usage strings
+
+
+if [ -z $1 ]
+then
+	echo -e "$S_USAGE"
+	exit $E_ERROR
+fi
+
+if [ "$1" == "help" ] || [ "$1" == "--help" ]
+then
+	echo -e "$S_HELP"
+	echo -e "$S_USAGE_EXTENDED"
+	exit $E_SUCCESS
+fi
+
+# check svn installed
+SVN_LOC=$(whereis svn)
+if [ "$SVN_LOC" == "svn:" ]
+then
+	echo -e "$S_SVN_NOT_INSTALLED"
+	exit $E_ERROR
+fi
+
+# check valid svn repo
+SVN_REPO_URL=$1
+err=$(svn info "$SVN_REPO_URL" 2>&1)
+if [ $? -ne 0 ]
+then
+	echo -e "$S_MOUNT_ERROR"
+	echo -e "$err"
+	exit $E_ERROR
+fi
+
+# 'mount' it!
+CURR_BROWSE_LOC=$SVN_REPO_URL
+while true
+do
+	echo -n ">"
+	read cmd
+	if [ "${cmd:0:2}" == "cd" ] 
+	then
+		len=`expr length "$cmd"`
+		dir=${cmd:3:$len}
+		if [ "$dir" == "." ] 
+		then
+			continue
+		elif [ "$dir" == ".." ] 
+		then
+			len_curr_loc=`expr length "$CURR_BROWSE_LOC"`
+			last_char=`expr substr "$CURR_BROWSE_LOC" "$len_curr_loc" 1`
+			CURR_BROWSE_LOC=${CURR_BROWSE_LOC%/*$last_char}
+			continue
+		fi
+
+		err=$(svn info "$CURR_BROWSE_LOC"/"$dir" 2>&1)
+		if [ $? -ne 0 ] 
+		then
+			echo "mountrepo: cd: "$dir": No such file or directory"
+			continue
+		fi
+
+		isDir=$(echo "$err" | grep "directory")
+		if [ $? -eq 1 ] 
+		then
+			echo "mountrepo: cannot 'mount' file, only directories"
+		else
+			CURR_BROWSE_LOC="$CURR_BROWSE_LOC"/"$dir"
+		fi
+	else
+		case "$cmd" in
+			"ls")
+				svn ls $CURR_BROWSE_LOC
+			;;
+			"ls -R")
+				svn ls $CURR_BROWSE_LOC --depth infinity
+			;;
+			"clear")
+				clear
+			;;
+			"exit")
+				exit $E_SUCCESS
+			;;
+		esac
+	fi	
+done
