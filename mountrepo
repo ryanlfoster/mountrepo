@@ -22,6 +22,22 @@ PWD_CMD="pwd"
 CLEAR_CMD="clear"
 EXIT_CMD="exit"
 
+# Escape characters
+IFS_ORIG="$IFS"
+IFS=""
+TAB_CHAR=`printf "\t"`
+ENTER_CHAR=`printf "\n"`
+ESC_SEQ=$'\x1b'
+UP_ARROW=$'\x1b[A'
+DOWN_ARROW=$'\x1b[B'
+LEFT_ARROW=$'\x1b[D'
+RIGHT_ARROW=$'\x1b[C'
+DELETE_CHAR=$'\x7f'
+
+BACKSPACE="\b"
+CLEAR_LINE_RIGHT="\x1b[K"
+CLEAR_LINE="\x1b[2K"
+
 if [ -z $1 ]
 then
 	echo -e "$S_USAGE"
@@ -53,22 +69,6 @@ then
 	exit $E_ERROR
 fi
 
-# do some final setup
-IFS_ORIG="$IFS"
-IFS=""
-tab_char=`printf "\t"`
-enter_char=`printf "\n"`
-esc_seq=$'\x1b'
-up_arrow=$'\x1b[A'
-down_arrow=$'\x1b[B'
-left_arrow=$'\x1b[D'
-right_arrow=$'\x1b[C'
-delete_char=$'\x7f'
-
-backspace="\b"
-clear_line_right="\x1b[K"
-clear_line="\x1b[2K"
-
 cmd_stack[0]=""
 cmd_stack_len=0
 cmd_stack_index=0
@@ -78,46 +78,44 @@ CURR_BROWSE_LOC=$SVN_REPO_URL
 while true
 do
 	cmd=""
-	cmd_stack_index=$((cmd_stack_len-1))
-	printf ">"
+	cmd_stack_index=$((cmd_stack_len))
+	printf "$CURR_BROWSE_LOC""$ "
 	while true
 	do
 		read -s -n1 key
 		case "$key" in
-			"$tab_char")
+			"$TAB_CHAR")
 				break
 			;;
-			"$enter_char")
+			"$ENTER_CHAR")
 				cmd_stack[$cmd_stack_len]="$cmd"
 				((cmd_stack_len++))
 				break
 			;;
-			"$esc_seq")
+			"$ESC_SEQ")
 				read -s -n2 escp # read rest of escape sequence
 				seq=$key$escp
-				if [ "$seq" == "$up_arrow" ]
-				then
-					if [ "$cmd_stack_index" -gt 0 ]
-					then
+				# printf "$CLEAR_LINE\r"
+				# printf "$CURR_BROWSE_LOC""$ ""${cmd_stack["$cmd_stack_index"]}"
+				if [ "$seq" == "$UP_ARROW" ]; then
+					if [ "$cmd_stack_index" -gt 0 ]; then
 						((cmd_stack_index--))
 					fi
-				elif [ "$seq" == "$down_arrow" ]
-				then
-					if [ "$cmd_stack_index" -lt $((cmd_stack_len-1)) ]
-					then
+				elif [ "$seq" == "$DOWN_ARROW" ]; then
+					if [ "$cmd_stack_index" -lt $((cmd_stack_len-1)) ]; then
 						((cmd_stack_index++))
 					fi
 				fi
 
-				printf "$clear_line\r"
-				printf ">${cmd_stack["$cmd_stack_index"]}"
+				printf "$CLEAR_LINE\r"
+				printf "$CURR_BROWSE_LOC""$ ""${cmd_stack["$cmd_stack_index"]}"
 				cmd="${cmd_stack["$cmd_stack_index"]}"
 			;;
-			"$delete_char")
+			"$DELETE_CHAR")
 				cmd_len=`expr length "$cmd"`
 				if [ "$cmd_len" -gt 0 ]
 				then
-					printf "$backspace""$clear_line_right"
+					printf "$BACKSPACE""$CLEAR_LINE_RIGHT"
 					cmd=${cmd:0:$cmd_len-1}
 				fi
 			;;
@@ -132,14 +130,15 @@ do
 	then
 		len=`expr length "$cmd"`
 		dir=${cmd:3:$len}
-		if [ "$dir" == $DOT_CMD ] 
-		then
+		if [ "$dir" == $DOT_CMD ]; then
 			continue
-		elif [ "$dir" == $DOTDOT_CMD ] 
-		then
+		elif [ "$dir" == $DOTDOT_CMD ]; then
 			len_curr_loc=`expr length "$CURR_BROWSE_LOC"`
 			last_char=`expr substr "$CURR_BROWSE_LOC" "$len_curr_loc" 1`
 			CURR_BROWSE_LOC=${CURR_BROWSE_LOC%/*$last_char}
+			continue
+		elif [ "$dir" == "" ]; then
+			CURR_BROWSE_LOC="$SVN_REPO_URL"
 			continue
 		fi
 
@@ -160,7 +159,8 @@ do
 	else
 		case "$cmd" in
 			"$LS_CMD")
-				svn ls $CURR_BROWSE_LOC
+				ls_res=`svn ls $CURR_BROWSE_LOC`
+				echo ${ls_res//$'\n'/' '} # replace newline characters
 			;;
 			"$LS_R_CMD")
 				svn ls $CURR_BROWSE_LOC --depth infinity
@@ -174,8 +174,8 @@ do
 			"$EXIT_CMD")
 				exit $E_SUCCESS
 			;;
-			*)
-				printf "Command not recognized: "$cmd"\n"
+			*) # pass any unrecognized commands off to svn	
+				svn "$cmd" $CURR_BROWSE_LOC
 			;;
 		esac
 	fi	
